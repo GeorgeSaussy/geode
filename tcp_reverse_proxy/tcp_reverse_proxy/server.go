@@ -1,4 +1,4 @@
-package tpf
+package tcp_reverse_proxy
 
 import (
 	"errors"
@@ -51,10 +51,9 @@ func (s *Server) Serve() error {
 		if err != nil {
 			log.Printf("could not connect to backend: %s\n", err.Error())
 			cl.Close()
-			continue // return
+			continue
 		}
-		defer cl.Close()
-		defer px.Close()
+		// cl and px must be closed by the user
 		go func() { io.Copy(px, cl) }()
 		go func() { io.Copy(cl, px) }()
 	}

@@ -1,4 +1,4 @@
-package tpf
+package tcp_reverse_proxy
 
 import (
 	"context"
@@ -12,37 +12,38 @@ import (
 
 func TestPortCheck(t *testing.T) {
 	log.Println("checking bad port handling")
-	if _, err := NewServer(-1, 5000); err == nil {
+	if _, err := NewServer(-1, 4007); err == nil {
 		t.Errorf("expected an error for a negative listening port")
 	}
 	if _, err := NewServer(80, -1); err == nil {
 		t.Errorf("expected an error for a negative proxied port")
 	}
-	if _, err := NewServer(80, 5000); err != nil {
+	if _, err := NewServer(80, 4007); err != nil {
 		t.Error(err)
 	}
 }
 
 func helloWorldServer() *http.Server {
 	s := &http.Server{}
-	s.Addr = "localhost:4000"
+	s.Addr = "localhost:4009"
 	s.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hello world"))
 	})
 	return s
 }
 
-func waitUntilServing(s string) {
-	for {
+func waitUntilServing(s string) bool {
+	for try := 0; try < 5; try += 1 {
 		// heatbeat helloworld server until it starts
 		if resp, err := http.Get(s); err == nil {
 			if resp.StatusCode == 200 {
-				break
+				return true
 			}
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 		log.Println("server did not start, heartbeating again")
 	}
+	return false
 }
 
 func laserServer(s string, t *testing.T) time.Duration {
@@ -86,11 +87,13 @@ func TestServer(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	be := "http://localhost:4000/"
-	waitUntilServing(be)
+	be := "http://localhost:4009/"
+	if !waitUntilServing(be) {
+		t.Fatal("test server never started serving")
+	}
 	d0 := laserServer(be, t)
 	log.Printf("4000 requests sent to helloworld backend on 4 threads in %s\n", d0.String())
-	f, err := NewServer(4001, 4000)
+	f, err := NewServer(4008, 4009)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,8 +102,10 @@ func TestServer(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	ll := "http://localhost:4001/"
-	waitUntilServing(ll)
+	ll := "http://localhost:4008/"
+	if !waitUntilServing(ll) {
+		t.Fatal("proxy never started serving")
+	}
 	d1 := laserServer(ll, t)
 	log.Printf("4000 requests sent to helloworld backend on 4 threads in %s\n", d1.String())
 	log.Printf("proxied requests performed %f x slower than unproxied requests", d1.Seconds()/d0.Seconds())
@@ -110,7 +115,7 @@ func TestServer(t *testing.T) {
 }
 
 func TestBadConnections(t *testing.T) {
-	f, err := NewServer(80, 5000)
+	f, err := NewServer(80, 4008)
 	if err != nil {
 		t.Error(err)
 	}
@@ -118,7 +123,10 @@ func TestBadConnections(t *testing.T) {
 	if err := f.Serve(); err == nil {
 		t.Error("expected permissions error for port 80")
 	}
-	f, err = NewServer(4005, 4006)
+	f, err = NewServer(4008, 4009)
+	if err != nil {
+		t.Fatal(err)
+	}
 	go func() {
 		if err := f.Serve(); err != nil {
 			t.Error(err)
@@ -126,14 +134,12 @@ func TestBadConnections(t *testing.T) {
 	}()
 	for try := 0; try < 10; try++ {
 		// should never respond
-		if _, err := http.Get("http://localhost:4005"); err == nil {
+		if _, err := http.Get("http://localhost:4008"); err == nil {
 			t.Error("there should be no response")
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
-	defer func() {
-		if err := f.Shutdown(); err != nil {
-			t.Error(err)
-		}
-	}()
+	if err := f.Shutdown(); err != nil {
+		t.Error(err)
+	}
 }

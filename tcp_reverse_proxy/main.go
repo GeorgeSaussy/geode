@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"geode/tpf/tpf"
+	tpf "geode/tcp_reverse_proxy/tcp_reverse_proxy"
 	"log"
 )
 
