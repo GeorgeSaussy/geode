@@ -1,8 +1,8 @@
 package tcp_reverse_proxy
 
 import (
-	"context"
 	"fmt"
+	"geode/test_server"
 	"log"
 	"net/http"
 	"sync"
@@ -21,15 +21,6 @@ func TestPortCheck(t *testing.T) {
 	if _, err := NewServer(80, 4007); err != nil {
 		t.Error(err)
 	}
-}
-
-func helloWorldServer() *http.Server {
-	s := &http.Server{}
-	s.Addr = "localhost:4009"
-	s.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello world"))
-	})
-	return s
 }
 
 func waitUntilServing(s string) bool {
@@ -76,21 +67,11 @@ func laserServer(s string, t *testing.T) time.Duration {
 
 func TestServer(t *testing.T) {
 	log.Println("checking HTTP forwarding")
-	h := helloWorldServer()
-	go func() {
-		if err := h.ListenAndServe(); err != nil && err.Error() != "http: Server closed" {
-			t.Error(err)
-		}
-	}()
-	defer func() {
-		if err := h.Shutdown(context.Background()); err != nil {
-			t.Error(err)
-		}
-	}()
+	h := test_server.MakeHelloServer(4009)
+	h.StartInBackground(t)
+	defer h.Stop(t)
+	h.BlockUntilStarted(t)
 	be := "http://localhost:4009/"
-	if !waitUntilServing(be) {
-		t.Fatal("test server never started serving")
-	}
 	d0 := laserServer(be, t)
 	log.Printf("4000 requests sent to helloworld backend on 4 threads in %s\n", d0.String())
 	f, err := NewServer(4008, 4009)
